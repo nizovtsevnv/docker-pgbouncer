@@ -1,0 +1,21 @@
+export SERVICE_NAME=pgbouncer
+export NETWORK_MASK=10.1.4.0/24
+export NETWORK_NAME=pg
+
+###############################################################################
+
+export NETWORK_ID=$(docker network ls -q -f "name=$NETWORK_NAME")
+export SWARM_MODE=$(docker info | grep Swarm | sed 's/Swarm: //g') # active / inactive
+export VOLUME_ROOT=$HOME/.docker-stack/$SERVICE_NAME
+
+if [ $SWARM_MODE == "active" ]; then
+    export CONTAINER_ID=$(docker ps -q -f "name=$SERVICE_NAME.1")
+else
+    export CONTAINER_ID=$(docker ps -q -f "name=$SERVICE_NAME")
+fi
+
+DIR=$VOLUME_ROOT/config
+if [ ! -d $DIR ]; then
+    echo "⚪️ Create folder: $DIR"
+    mkdir -p $DIR
+fi

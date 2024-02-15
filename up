@@ -1,0 +1,70 @@
+#!/bin/sh
+
+source ./env
+
+if [ -z $CONTAINER_ID ]; then
+    echo "⚪️ Backup pgbouncer.ini in volume folder"
+    sudo cp -f $VOLUME_ROOT/config/pgbouncer.ini $VOLUME_ROOT/config/pgbouncer.ini.backup
+
+    echo "⚪️ Copy pgbouncer.ini to volume folder"
+    sudo cp -f ./pgbouncer.ini $VOLUME_ROOT/config/pgbouncer.ini
+
+    echo "⚪️ Backup credentials in volume folder"
+    sudo cp -f $VOLUME_ROOT/config/credentials $VOLUME_ROOT/config/credentials.backup
+
+    echo "⚪️ Copy credentials to volume folder"
+    sudo cp -f ./credentials $VOLUME_ROOT/config/credentials
+
+    if [ $SWARM_MODE == "active" ]; then
+        if [ -z $NETWORK_ID ]; then
+            echo "⚪️ Create '$NETWORK_NAME' encrypted overlay network"
+            docker network create --attachable --driver overlay --opt encrypted --subnet $NETWORK_MASK $NETWORK_NAME
+        fi
+
+        echo "⚪️ Trying to start '$SERVICE_NAME'"
+        echo -n "⚪️ "
+        docker service create \
+            --constraint node.hostname==$(hostname) \
+            --limit-memory 1G \
+            --log-opt max-buffer-size=1k \
+            --log-opt max-file=10 \
+            --log-opt max-size=1k \
+            --log-opt mode=non-blocking \
+            --mount type=bind,source=$VOLUME_ROOT/config,destination=/etc/pgbouncer \
+            --name $SERVICE_NAME \
+            --network $NETWORK_NAME \
+            --replicas 1 \
+            nizovtsevnv/pgbouncer
+    else
+        if [ -z $NETWORK_ID ]; then
+            echo "⚪️ Create '$NETWORK_NAME' bridge network"
+            docker network create --attachable --driver bridge --subnet $NETWORK_MASK $NETWORK_NAME
+        fi
+
+        echo "⚪️ Trying to start '$SERVICE_NAME'"
+        echo -n "⚪️ "
+        docker run -d \
+            -e POSTGRES_PASSWORD_FILE=/run/POSTGRES_PASSWORD \
+            -e POSTGRES_USER=postgres \
+            -h $SERVICE_NAME \
+            --mount type=bind,source=$VOLUME_ROOT/config,destination=/etc/pgbouncer \
+            --name $SERVICE_NAME \
+            --network $NETWORK_NAME \
+            --restart always \
+            nizovtsevnv/pgbouncer
+    fi
+
+    if [ $SWARM_MODE == "active" ]; then
+        export CONTAINER_ID=$(docker ps -q -f "name=$SERVICE_NAME.1")
+    else
+        export CONTAINER_ID=$(docker ps -q -f "name=$SERVICE_NAME")
+    fi
+
+    if [ -z $CONTAINER_ID ]; then
+        echo "🔴 '$SERVICE_NAME' did not start"
+    else
+        echo "🟢 '$SERVICE_NAME' started"
+    fi
+else
+    echo "🔴 '$SERVICE_NAME' already run"
+fi
